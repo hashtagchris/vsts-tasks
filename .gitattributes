@@ -1,10 +1,8 @@
 ###############################################################################
-# Set default behavior to automatically normalize line endings.
+# Use LF line endings everywhere, even on Windows.
+# If this is switched to auto, add an override for shell scripts.
 ###############################################################################
-*           text=auto
-
-# Shell scripts should always use line feed not crlf
-*.sh text eol=lf
+*           text eof=lf
 
 ###############################################################################
 # Set default behavior for command prompt diff.
@@ -67,6 +65,7 @@
 *.zip     binary
 *.7z      binary
 *.ttf     binary
+*.exe     binary
 
 ###############################################################################
 # diff behavior for common document formats
