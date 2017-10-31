@@ -17,7 +17,7 @@
   "version": {
     "Major": 2,
     "Minor": 125,
-    "Patch": 0
+    "Patch": 4
   },
   "releaseNotes": "ms-resource:loc.releaseNotes",
   "preview": true,
@@ -35,7 +35,6 @@
       "type": "radio",
       "label": "ms-resource:loc.input.label.targetType",
       "required": false,
-      "defaultValue": "filePath",
       "helpMarkDown": "ms-resource:loc.input.help.targetType",
       "options": {
         "filePath": "File Path",
@@ -66,7 +65,6 @@
       "label": "ms-resource:loc.input.label.script",
       "visibleRule": "targetType = inline",
       "required": true,
-      "defaultValue": "# Write your powershell commands here.\n\nWrite-Host \"Hello World\"",
       "properties": {
         "resizable": "true",
         "rows": "10",

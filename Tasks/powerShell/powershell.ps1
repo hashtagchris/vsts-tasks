@@ -19,9 +19,27 @@ try {
     $input_ignoreLASTEXITCODE = Get-VstsInput -Name 'ignoreLASTEXITCODE' -AsBool
     $input_workingDirectory = Get-VstsInput -Name 'workingDirectory' -Require
     Assert-VstsPath -LiteralPath $input_workingDirectory -PathType 'Container'
-    $input_targetType = Get-VstsInput -Name 'targetType'
-    if ("$input_targetType".ToUpperInvariant() -eq "FILEPATH") {
-        $input_filePath = Get-VstsInput -Name 'filePath' -Require
+
+    $input_targetType = Get-VstsInput -Name 'targetType'    
+    $input_filePath = Get-VstsInput -Name 'filePath'
+    $input_arguments = Get-VstsInput -Name 'arguments'    
+    $input_script = Get-VstsInput -Name 'script'
+    
+    # Hack to determine if filePath was explicitly specified.
+    # Maybe there's a way to get the raw input?
+    if ($input_filePath -eq $input_workingDirectory) {
+        $input_filePath = $null
+    }
+
+    if ($input_filePath) {
+        if ($input_targetType -and $input_targetType.ToUpperInvariant() -ne 'FILEPATH') {
+            Write-Error "The filePath input can only be used with targetType 'filePath'"
+        }
+
+        if ($input_script) {
+            Write-Error "The filePath and script inputs are mutually exclusive. Supply only one."
+        }
+
         try {
             Assert-VstsPath -LiteralPath $input_filePath -PathType Leaf
         } catch {
@@ -32,16 +50,24 @@ try {
             Write-Error (Get-VstsLocString -Key 'PS_InvalidFilePath' -ArgumentList $input_filePath)
         }
 
-        $input_arguments = Get-VstsInput -Name 'arguments'
-    } else {
-        $input_script = Get-VstsInput -Name 'script'
+    } elseif ($input_script) {
+        if ($input_targetType -and $input_targetType.ToUpperInvariant() -ne 'SCRIPT') {
+            Write-Error "The script input can only be used with targetType 'script'"
+        }
+
+        if ($input_arguments) {
+            Write-Error "The arguments input should be used only in conjunction with the filePath input."
+        }
+    }
+    else {
+        Write-Error "The filePath or script input is required."
     }
 
     # Generate the script contents.
     Write-Host (Get-VstsLocString -Key 'GeneratingScript')
     $contents = @()
     $contents += "`$ErrorActionPreference = '$input_errorActionPreference'"
-    if ("$input_targetType".ToUpperInvariant() -eq 'FILEPATH') {
+    if ($input_filePath) {
         $contents += ". '$("$input_filePath".Replace("'", "''"))' $input_arguments".Trim()
         Write-Host (Get-VstsLocString -Key 'PS_FormattedCommand' -ArgumentList ($contents[-1]))
     } else {
