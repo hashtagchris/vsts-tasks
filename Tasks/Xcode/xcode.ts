@@ -40,34 +40,61 @@ async function run() {
         //--------------------------------------------------------
         // Xcode args
         //--------------------------------------------------------
-        let ws: string = tl.getPathInput('xcWorkspacePath', false, false);
+        let wsOrProj: string = tl.getPathInput('xcWorkspacePath', false, false);
+        let workspace: string;
+        let project: string;
         if (tl.filePathSupplied('xcWorkspacePath')) {
-            let workspaceMatches = tl.findMatch(workingDir, ws, { followSymbolicLinks: false, followSpecifiedSymbolicLink: false });
+            let workspaceMatches = tl.findMatch(workingDir, wsOrProj, { followSymbolicLinks: false, followSpecifiedSymbolicLink: false });
             tl.debug("Found " + workspaceMatches.length + ' workspaces matching.');
 
             if (workspaceMatches.length > 0) {
-                ws = workspaceMatches[0];
+                wsOrProj = workspaceMatches[0];
                 if (workspaceMatches.length > 1) {
-                    tl.warning(tl.loc('MultipleWorkspacesFound', ws));
+                    tl.warning(tl.loc('MultipleWorkspacesFound', wsOrProj));
                 }
             }
             else {
-                throw tl.loc('WorkspaceDoesNotExist', ws);
+                throw tl.loc('WorkspaceDoesNotExist', wsOrProj);
+            }
+
+            if (wsOrProj.trim().toLowerCase().endsWith('.xcodeproj')) {
+                project = wsOrProj;
+            }
+            else {
+                workspace = wsOrProj;
             }
         }
 
-        let isProject = false;
-        if (ws && ws.trim().toLowerCase().endsWith('.xcodeproj')) {
-            isProject = true;
+        if (workspace) {
+            // Configure intermediates and artifacts to be built under the output directory.
+            // TODO: Will this technique work only with the new build system?
+            let whoami: string = tl.which('whoami', true);
+            let username: string = tl.tool(whoami).execSync().stdout.trim();
+
+            if (!username) {
+                // TODO: loc
+                // TODO: tests
+                throw 'Unable to determine current username.';
+            }
+
+            let plist: string = tl.which('/usr/libexec/PlistBuddy', true);
+
+            let userSettingsDir: string = tl.resolve(`${workspace}/xcuserdata/${username}.xcuserdatad`);
+            tl.mkdirP(userSettingsDir);
+            let workspaceSettings = tl.resolve(userSettingsDir, 'WorkspaceSettings.xcsettings');
+
+            tl.tool(plist).arg(['-c', 'Clear', workspaceSettings]).execSync();
+            tl.tool(plist).arg(['-c', 'Add DerivedDataLocationStyle string AbsolutePath', workspaceSettings]).execSync();
+            tl.tool(plist).arg(['-c', `Add DerivedDataCustomLocation string ${outPath}`, workspaceSettings]).execSync();
         }
 
         let scheme: string = tl.getInput('scheme', false);
 
         // If we have a workspace argument but no scheme, see if there's
         // single shared scheme we can use.
-        if (!scheme && !isProject && ws && tl.filePathSupplied('xcWorkspacePath')) {
+        if (!scheme && workspace) {
             try {
-                let schemes: string[] = await utils.getWorkspaceSchemes(tool, ws);
+                let schemes: string[] = await utils.getWorkspaceSchemes(tool, workspace);
 
                 if (schemes.length > 1) {
                     tl.warning(tl.loc('MultipleSchemesFound'));
@@ -144,11 +171,8 @@ async function run() {
         let xcb: ToolRunner = tl.tool(tool);
         xcb.argIf(sdk, ['-sdk', sdk]);
         xcb.argIf(configuration, ['-configuration', configuration]);
-        if (ws && tl.filePathSupplied('xcWorkspacePath')) {
-            xcb.argIf(isProject, '-project');
-            xcb.argIf(!isProject, '-workspace');
-            xcb.arg(ws);
-        }
+        xcb.argIf(project, ['-project', project]);
+        xcb.argIf(workspace, ['-workspace', workspace]);
         xcb.argIf(scheme, ['-scheme', scheme]);
         // Add a -destination argument for each device and simulator.
         if (destinations) {
@@ -157,14 +181,6 @@ async function run() {
             });
         }
         xcb.arg(actions);
-        if (actions.toString().indexOf('archive') < 0) {
-            // redirect build output if archive action is not passed
-            // xcodebuild archive produces an invalid archive if output is redirected
-            xcb.arg('DSTROOT=' + tl.resolve(outPath, 'build.dst'));
-            xcb.arg('OBJROOT=' + tl.resolve(outPath, 'build.obj'));
-            xcb.arg('SYMROOT=' + tl.resolve(outPath, 'build.sym'));
-            xcb.arg('SHARED_PRECOMPS_DIR=' + tl.resolve(outPath, 'build.pch'));
-        }
         if (args) {
             xcb.line(args);
         }
@@ -268,17 +284,14 @@ async function run() {
             if (!scheme) {
                 throw tl.loc("SchemeRequiredForArchive");
             }
-            if (!ws || !tl.filePathSupplied('xcWorkspacePath')) {
+            if (!project && !workspace) {
                 throw tl.loc("WorkspaceOrProjectRequiredForArchive");
             }
 
             // create archive
             let xcodeArchive: ToolRunner = tl.tool(tl.which('xcodebuild', true));
-            if (ws && tl.filePathSupplied('xcWorkspacePath')) {
-                xcodeArchive.argIf(isProject, '-project');
-                xcodeArchive.argIf(!isProject, '-workspace');
-                xcodeArchive.arg(ws);
-            }
+            xcb.argIf(project, ['-project', project]);
+            xcb.argIf(workspace, ['-workspace', workspace]);
             xcodeArchive.argIf(scheme, ['-scheme', scheme]);
             xcodeArchive.arg('archive'); //archive action
             xcodeArchive.argIf(sdk, ['-sdk', sdk]);
@@ -358,7 +371,7 @@ async function run() {
 
                         // If we're using the project defaults, scan the pbxProject file for the type of signing being used.
                         if (signingOptionForExport === 'default') {
-                            signingOptionForExport = await utils.getProvisioningStyle(ws);
+                            signingOptionForExport = await utils.getProvisioningStyle(workspace);
 
                             if (!signingOptionForExport) {
                                 tl.warning(tl.loc('CantDetermineProvisioningStyle'));
