@@ -66,26 +66,31 @@ async function run() {
         }
 
         if (workspace) {
-            // Configure intermediates and artifacts to be built under the output directory.
-            // TODO: Will this technique work only with the new build system?
-            let whoami: string = tl.which('whoami', true);
-            let username: string = tl.tool(whoami).execSync().stdout.trim();
+            if ((tl.getVariable('disableWSS') || '').toUpperCase() != "TRUE") {
+                // Configure intermediates and artifacts to be built under the output directory.
+                // TODO: Will this technique work only with the new build system?
+                let whoami: string = tl.which('whoami', true);
+                let username: string = tl.tool(whoami).execSync().stdout.trim();
 
-            if (!username) {
-                // TODO: loc
-                // TODO: tests
-                throw 'Unable to determine current username.';
+                if (!username) {
+                    // TODO: loc
+                    // TODO: tests
+                    throw 'Unable to determine current username.';
+                }
+
+                let plist: string = tl.which('/usr/libexec/PlistBuddy', true);
+
+                let userSettingsDir: string = tl.resolve(`${workspace}/xcuserdata/${username}.xcuserdatad`);
+                tl.mkdirP(userSettingsDir);
+                let workspaceSettings = tl.resolve(userSettingsDir, 'WorkspaceSettings.xcsettings');
+
+                tl.tool(plist).arg(['-c', 'Clear', workspaceSettings]).execSync();
+                tl.tool(plist).arg(['-c', 'Add DerivedDataLocationStyle string AbsolutePath', workspaceSettings]).execSync();
+                tl.tool(plist).arg(['-c', `Add DerivedDataCustomLocation string ${outPath}`, workspaceSettings]).execSync();
             }
-
-            let plist: string = tl.which('/usr/libexec/PlistBuddy', true);
-
-            let userSettingsDir: string = tl.resolve(`${workspace}/xcuserdata/${username}.xcuserdatad`);
-            tl.mkdirP(userSettingsDir);
-            let workspaceSettings = tl.resolve(userSettingsDir, 'WorkspaceSettings.xcsettings');
-
-            tl.tool(plist).arg(['-c', 'Clear', workspaceSettings]).execSync();
-            tl.tool(plist).arg(['-c', 'Add DerivedDataLocationStyle string AbsolutePath', workspaceSettings]).execSync();
-            tl.tool(plist).arg(['-c', `Add DerivedDataCustomLocation string ${outPath}`, workspaceSettings]).execSync();
+            else {
+                tl.debug('Skipping creation of WorkspaceSettings.xcsettings');
+            }
         }
 
         let scheme: string = tl.getInput('scheme', false);
@@ -241,6 +246,16 @@ async function run() {
         //--- Xcode Build ---
         await xcb.exec();
 
+        try {
+            tl.tool('/bin/ls').arg(['-la', `${outPath}/Xcode833AutomaticSigning-adokilxvmctjblcchhjivwkrgfzq/Build/Intermediates/ArchiveIntermediates/Xcode833AutomaticSigning/BuildProductsPath/Release-iphoneos`]).execSync();
+        }
+        catch (err) {}
+
+        try {
+            tl.tool('/bin/ls').arg(['-la', `${outPath}/Xcode833AutomaticSigning-adokilxvmctjblcchhjivwkrgfzq/Build/Intermediates/ArchiveIntermediates/Xcode833AutomaticSigning/InstallationBuildProductsLocation/Applications`]).execSync();
+        }
+        catch (err) {}
+
         //--------------------------------------------------------
         // Test publishing
         //--------------------------------------------------------
@@ -290,8 +305,8 @@ async function run() {
 
             // create archive
             let xcodeArchive: ToolRunner = tl.tool(tl.which('xcodebuild', true));
-            xcb.argIf(project, ['-project', project]);
-            xcb.argIf(workspace, ['-workspace', workspace]);
+            xcodeArchive.argIf(project, ['-project', project]);
+            xcodeArchive.argIf(workspace, ['-workspace', workspace]);
             xcodeArchive.argIf(scheme, ['-scheme', scheme]);
             xcodeArchive.arg('archive'); //archive action
             xcodeArchive.argIf(sdk, ['-sdk', sdk]);
@@ -322,6 +337,16 @@ async function run() {
                 xcodeArchive.pipeExecOutputToTool(xcPrettyTool);
             }
             await xcodeArchive.exec();
+
+            try {
+                tl.tool('/bin/ls').arg(['-la', `${outPath}/Xcode833AutomaticSigning-adokilxvmctjblcchhjivwkrgfzq/Build/Intermediates/ArchiveIntermediates/Xcode833AutomaticSigning/BuildProductsPath/Release-iphoneos`]).execSync();
+            }
+            catch (err) {}
+
+            try {
+                tl.tool('/bin/ls').arg(['-la', `${outPath}/Xcode833AutomaticSigning-adokilxvmctjblcchhjivwkrgfzq/Build/Intermediates/ArchiveIntermediates/Xcode833AutomaticSigning/InstallationBuildProductsLocation/Applications`]).execSync();
+            }
+            catch (err) {}
 
             let archiveFolders: string[] = tl.findMatch(archiveFolderRoot, '**/*.xcarchive', { followSymbolicLinks: false, followSpecifiedSymbolicLink: false });
             if (archiveFolders && archiveFolders.length > 0) {
@@ -432,6 +457,16 @@ async function run() {
                         xcodeExport.pipeExecOutputToTool(xcPrettyTool);
                     }
                     await xcodeExport.exec();
+
+                    try {
+                        tl.tool('/bin/ls').arg(['-la', `${outPath}/Xcode833AutomaticSigning-adokilxvmctjblcchhjivwkrgfzq/Build/Intermediates/ArchiveIntermediates/Xcode833AutomaticSigning/BuildProductsPath/Release-iphoneos`]).execSync();
+                    }
+                    catch (err) {}
+
+                    try {
+                        tl.tool('/bin/ls').arg(['-la', `${outPath}/Xcode833AutomaticSigning-adokilxvmctjblcchhjivwkrgfzq/Build/Intermediates/ArchiveIntermediates/Xcode833AutomaticSigning/InstallationBuildProductsLocation/Applications`]).execSync();
+                    }
+                    catch (err) {}
                 }
             }
         }
