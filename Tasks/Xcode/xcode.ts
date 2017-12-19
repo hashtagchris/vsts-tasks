@@ -303,7 +303,7 @@ async function run() {
                         exportMethod = await sign.getProvisioningProfileType(embeddedProvProfiles[0]);
                         tl.debug('Using export method = ' + exportMethod);
                     }
-                    if (!exportMethod) {
+                    if (!exportMethod && sdk === 'iphoneos') {
                         tl.warning(tl.loc('ExportMethodNotIdentified'));
                     }
                 } else if (exportOptions === 'specify') {
@@ -316,55 +316,64 @@ async function run() {
                     }
                 }
 
-                if (exportMethod) {
-                    // generate the plist file if we have an exportMethod set from exportOptions = auto or specify
+                if (exportOptions !== 'plist') {
+                    // As long as the user didn't provide a plist, start with an empty one.
+                    // Xcode 7 warns "-exportArchive without -exportOptionsPlist is deprecated"
+                    // Xcode 8+ will error if a plist isn't provided.
                     let plist: string = tl.which('/usr/libexec/PlistBuddy', true);
+
                     exportOptionsPlist = '_XcodeTaskExportOptions.plist';
                     tl.tool(plist).arg(['-c', 'Clear', exportOptionsPlist]).execSync();
-                    tl.tool(plist).arg(['-c', 'Add method string ' + exportMethod, exportOptionsPlist]).execSync();
+
+                    // Add the teamId if provided.
                     if (exportTeamId) {
                         tl.tool(plist).arg(['-c', 'Add teamID string ' + exportTeamId, exportOptionsPlist]).execSync();
                     }
 
-                    if (xcodeVersion >= 9 && exportOptions === 'auto') {
-                        const cloudEntitlement = await sign.getCloudEntitlement(embeddedProvProfiles[0], exportMethod);                        
-                        if (cloudEntitlement) {
-                            tl.debug("Adding cloud entitlement");
-                            tl.tool(plist).arg(['-c', `Add iCloudContainerEnvironment string ${cloudEntitlement}`, exportOptionsPlist]).execSync();
-                        }
-                        let signingOptionForExport = signingOption;
+                    // Add the export method if provided or determined above.
+                    if (exportMethod) {
+                        tl.tool(plist).arg(['-c', 'Add method string ' + exportMethod, exportOptionsPlist]).execSync();
 
-                        // If we're using the project defaults, scan the pbxProject file for the type of signing being used.
-                        if (signingOptionForExport === 'default') {
-                            signingOptionForExport = await utils.getProvisioningStyle(ws);
-
-                            if (!signingOptionForExport) {
-                                tl.warning(tl.loc('CantDetermineProvisioningStyle'));
+                        if (xcodeVersion >= 9 && exportOptions === 'auto') {
+                            const cloudEntitlement = await sign.getCloudEntitlement(embeddedProvProfiles[0], exportMethod);
+                            if (cloudEntitlement) {
+                                tl.debug("Adding cloud entitlement");
+                                tl.tool(plist).arg(['-c', `Add iCloudContainerEnvironment string ${cloudEntitlement}`, exportOptionsPlist]).execSync();
                             }
-                        }
+                            let signingOptionForExport = signingOption;
 
-                        if (signingOptionForExport === 'manual') {
-                            // Xcode 9 manual signing, set code sign style = manual
-                            tl.tool(plist).arg(['-c', 'Add signingStyle string ' + 'manual', exportOptionsPlist]).execSync();
+                            // If we're using the project defaults, scan the pbxProject file for the type of signing being used.
+                            if (signingOptionForExport === 'default') {
+                                signingOptionForExport = await utils.getProvisioningStyle(ws);
 
-                            // add provisioning profiles to the exportOptions plist
-                            // find bundle Id from Info.plist and prov profile name from the embedded profile in each .app package
-                            tl.tool(plist).arg(['-c', 'Add provisioningProfiles dict', exportOptionsPlist]).execSync();
-
-                            for (let i = 0; i < embeddedProvProfiles.length; i++) {
-                                let embeddedProvProfile: string = embeddedProvProfiles[i];
-                                let profileName: string = await sign.getProvisioningProfileName(embeddedProvProfile);
-                                tl.debug('embedded provisioning profile = ' + embeddedProvProfile + ', profile name = ' + profileName);
-
-                                let embeddedInfoPlist: string = tl.resolve(path.dirname(embeddedProvProfile), 'Info.plist');
-                                let bundleId: string = await sign.getBundleIdFromPlist(embeddedInfoPlist);
-                                tl.debug('embeddedInfoPlist path = ' + embeddedInfoPlist + ', bundle identifier = ' + bundleId);
-
-                                if (!profileName || !bundleId) {
-                                    throw tl.loc('FailedToGenerateExportOptionsPlist');
+                                if (!signingOptionForExport) {
+                                    tl.warning(tl.loc('CantDetermineProvisioningStyle'));
                                 }
+                            }
 
-                                tl.tool(plist).arg(['-c', 'Add provisioningProfiles:' + bundleId + ' string ' + profileName, exportOptionsPlist]).execSync();
+                            if (signingOptionForExport === 'manual') {
+                                // Xcode 9 manual signing, set code sign style = manual
+                                tl.tool(plist).arg(['-c', 'Add signingStyle string ' + 'manual', exportOptionsPlist]).execSync();
+
+                                // add provisioning profiles to the exportOptions plist
+                                // find bundle Id from Info.plist and prov profile name from the embedded profile in each .app package
+                                tl.tool(plist).arg(['-c', 'Add provisioningProfiles dict', exportOptionsPlist]).execSync();
+
+                                for (let i = 0; i < embeddedProvProfiles.length; i++) {
+                                    let embeddedProvProfile: string = embeddedProvProfiles[i];
+                                    let profileName: string = await sign.getProvisioningProfileName(embeddedProvProfile);
+                                    tl.debug('embedded provisioning profile = ' + embeddedProvProfile + ', profile name = ' + profileName);
+
+                                    let embeddedInfoPlist: string = tl.resolve(path.dirname(embeddedProvProfile), 'Info.plist');
+                                    let bundleId: string = await sign.getBundleIdFromPlist(embeddedInfoPlist);
+                                    tl.debug('embeddedInfoPlist path = ' + embeddedInfoPlist + ', bundle identifier = ' + bundleId);
+
+                                    if (!profileName || !bundleId) {
+                                        throw tl.loc('FailedToGenerateExportOptionsPlist');
+                                    }
+
+                                    tl.tool(plist).arg(['-c', 'Add provisioningProfiles:' + bundleId + ' string ' + profileName, exportOptionsPlist]).execSync();
+                                }
                             }
                         }
                     }
