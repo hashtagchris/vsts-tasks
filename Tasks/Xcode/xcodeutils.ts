@@ -119,19 +119,35 @@ export async function getWorkspaceSchemes(xcbuild: string, workspace: string) : 
  * Returns the first provisioning/signing style found in workspace's project files: "auto", "manual" or undefined if not found.
  */
 export async function getProvisioningStyle(workspace: string) : Promise<string> {
-    let provisioningStyle: string;
+    const provisioningStyle: string = await getSettingFromPbxProject(workspace, getProvisioningStyleFromPbxProject);
+
+    tl.debug(`provisioning style: ${provisioningStyle}`);
+    return provisioningStyle;
+}
+
+/**
+ * Returns the first SDKROOT found in workspace's project files (e.g. "iphoneos", "macosx"), or undefined if not found.
+ */
+export async function getSdkRoot(workspace: string) : Promise<string> {
+    const sdkRoot: string = await getSettingFromPbxProject(workspace, getSdkRootFromPbxProject);
+
+    tl.debug(`SDKROOT: ${sdkRoot}`);
+    return sdkRoot;
+}
+
+async function getSettingFromPbxProject(workspace: string, settingDelegate: (string) => Promise<string>) : Promise<string> {
+    let setting: string;
 
     if (workspace) {
         let pbxProjectPath = getPbxProjectPath(workspace);
         tl.debug(`pbxProjectPath is ${pbxProjectPath}`);
 
         if (pbxProjectPath) {
-            provisioningStyle = await getProvisioningStyleFromPbxProject(pbxProjectPath);
-            tl.debug(`pbxProjectPath provisioning style: ${provisioningStyle}`);
+            setting = await settingDelegate(pbxProjectPath);
         }
     }
 
-    return provisioningStyle;
+    return setting;
 }
 
 function getPbxProjectPath(workspace: string) {
@@ -172,6 +188,33 @@ function getProvisioningStyleFromPbxProject(pbxProjectPath) : Promise<string> {
         }).on('close', () => {
             if (!firstProvisioningStyleFound) {
                 tl.debug(`close event occurred before a provisioning style was found in the pbxProject file. Lines examined: ${linesExamined}`);
+                resolve(undefined);
+            }
+        });
+    });
+}
+
+function getSdkRootFromPbxProject(pbxProjectPath) : Promise<string> {
+    return new Promise((resolve, reject) => {
+        const assigmentStart = 'SDKROOT =';
+        const rl = readline.createInterface({
+            input: fs.createReadStream(pbxProjectPath)
+        });
+        let firstSdkRootFound = false;
+        let linesExamined = 0;
+        rl.on('line', (line) => {
+            if (!firstSdkRootFound) {
+                linesExamined++;
+                let trimmedLine = line.trim();
+                if (trimmedLine.startsWith(assigmentStart)) {
+                    tl.debug(`first SDKROOT line: ${line}`);
+                    const sdkRoot = trimmedLine.substr(assigmentStart.length).trim();
+                    resolve(sdkRoot);
+                }
+            }
+        }).on('close', () => {
+            if (!firstSdkRootFound) {
+                tl.debug(`close event occurred before a SDKROOT was found in the pbxProject file. Lines examined: ${linesExamined}`);
                 resolve(undefined);
             }
         });
